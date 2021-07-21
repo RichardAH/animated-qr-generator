@@ -67,8 +67,8 @@ int main()
     
     // GLOBAL COLOUR TABLE
     {
-        b[u++] = 0x00;   b[u++] = 0xFF;   b[u++] = 0x0;
-        b[u++] = 0xFFU;  b[u++] = 0x00U; b[u++] = 0x00U;
+        b[u++] = 0x00;   b[u++] = 0x00;   b[u++] = 0x00;
+        b[u++] = 0xFFU;  b[u++] = 0xFFU; b[u++] = 0xFFU;
         
     } 
 
@@ -96,155 +96,162 @@ int main()
         // end of subblock chain
         b[u++] = 0x0;
     }
-    // GRAPHIC CONTROL EXTENSION
+    
+    // FRAME
+    for (int flip = 0; flip < 2; ++flip)
     {
-        // graphic control extension for frame
-        b[u++] = 0x21U; b[u++] = 0xF9U;
-
-        // subblock length
-        b[u++] = 0x04U;
-
-        // disposal method = 1, no user input, no transparent colour
-        b[u++] = 0b00000100;
-
-        // number of 1/100ths of a second to wait
-        b[u++] = 50U;   b[u++] = 0x0; 
-        
-        // transparent colour index (unused)
-        b[u++] = 0xFFU;   
-       
-        // end of subblock 
-        b[u++] = 0x0;       
-    }
-
-    // IMAGE DESCRIPTOR
-    {
-        // image seperator
-        b[u++] = 0x2C;
-        
-        // left position
-        b[u++] = 0x0;   b[u++] = 0x0;
-
-        // top position
-        b[u++] = 0x0;   b[u++] = 0x0;
-        
-        // width
-        b[u++] = image_width & 0xFFU; b[u++] = image_width >> 8U;
-
-        // height
-        b[u++] = image_height & 0xFFU; b[u++] = image_height >> 8U;
-
-        // packed fields
-        b[u++] = 0x0;   // no flags active
-
-        
-    }
-
-    // IMAGE DATA
-    {
-        // LZW Minimum code size
-        b[u++] = 2U; // minimum code size = 2 even for monochrome
-
-        int64_t pixel_count = image_width * image_height;
-
-        // we can fit exactly 680 code words in a 255 byte block
-        // which means we can fit exactly 678 pixels since there is a start and end code
-
-#define PIXELS_PER_BLOCK 450
-
-        int64_t block_count = pixel_count / PIXELS_PER_BLOCK;
-
-        uint8_t final_block_size = 255;
-
-        // edge case: last block will be smaller
-        if (pixel_count % PIXELS_PER_BLOCK)
+        // GRAPHIC CONTROL EXTENSION
         {
-            block_count++;
-            int64_t remaining_pixels = pixel_count % PIXELS_PER_BLOCK;
+            // graphic control extension for frame
+            b[u++] = 0x21U; b[u++] = 0xF9U;
 
-       
-            int64_t final_bits = remaining_pixels * 3;
-            final_bits += final_bits >> 1U; // allowance for the clear codes
+            // subblock length
+            b[u++] = 0x04U;
 
-            final_block_size = (uint8_t)(final_bits / 8);
-            if (final_bits % 8)
-                final_block_size++;
+            // disposal method = 1, no user input, no transparent colour
+            b[u++] = 0b00000100;
+
+            // number of 1/100ths of a second to wait
+            b[u++] = 50U;   b[u++] = 0x0; 
+            
+            // transparent colour index (unused)
+            b[u++] = 0xFFU;   
+           
+            // end of subblock 
+            b[u++] = 0x0;       
         }
 
-        
-        while (block_count-- > 0)
+        // IMAGE DESCRIPTOR
         {
+            // image seperator
+            b[u++] = 0x2C;
+            
+            // left position
+            b[u++] = 0x0;   b[u++] = 0x0;
 
-            uint8_t bytes_remaining_in_block = 0xFFU;
+            // top position
+            b[u++] = 0x0;   b[u++] = 0x0;
+            
+            // width
+            b[u++] = image_width & 0xFFU; b[u++] = image_width >> 8U;
 
-            int64_t pixels_remaining_in_block = 678;
- 
-            if (block_count == 0)
-            {
-                bytes_remaining_in_block = final_block_size;
-                pixels_remaining_in_block = pixel_count;
-            }
+            // height
+            b[u++] = image_height & 0xFFU; b[u++] = image_height >> 8U;
 
-            b[u++] = bytes_remaining_in_block;
-
-            printf("\nBlock size: %02x\n\t", bytes_remaining_in_block);
-
-            // we'll code using a uint16_t as a shift register
-            uint16_t sr = 0;
-            uint8_t bc= 0;
-
-            // clear code
-            sr |= (0b100 << bc); bc += 3;
-
-            int counter = 0;
-            int max_counter = 2;
-
-            while (bytes_remaining_in_block-- > 0)
-            {
-
-                while (bc < 8)
-                {
-
-                        sr |= ((pixel_count % 2 == 0 ? 0b000 : 0b001) << bc); bc += 3; 
-                        --pixels_remaining_in_block;
-                        --pixel_count;
-                        ++counter;
-
-
-                        if (counter >= max_counter)
-                        {
-                            // clear code
-                            sr |= (0b100 << bc); bc += 3;
-                            counter = 0;
-                        }
-                        if (pixels_remaining_in_block <= 0)
-                            break;
-                }
+            // packed fields
+            b[u++] = 0x0;   // no flags active
 
             
-
-                // write lead out for the block
-                if (pixels_remaining_in_block == 0)
-                {
-                    sr |= (0b101 << bc); bc += 3;   // stop
-                }
-
-
-                // send the byte out
-                uint8_t byte_out = sr & 0xFFU;
-                printf("%02X ", byte_out);
-                b[u++] = byte_out;
-
-                sr >>= 8U;
-                bc -= 8;
-            }
-        
         }
 
-        // block terminator
-        b[u++] = 0x0;
-
         
+
+        // IMAGE DATA
+        {
+            // LZW Minimum code size
+            b[u++] = 2U; // minimum code size = 2 even for monochrome
+
+            int64_t pixel_count = image_width * image_height;
+
+            // we can fit exactly 680 code words in a 255 byte block
+            // which means we can fit exactly 678 pixels since there is a start and end code
+
+    #define PIXELS_PER_BLOCK 450
+
+            int64_t block_count = pixel_count / PIXELS_PER_BLOCK;
+
+            uint8_t final_block_size = 255;
+
+            // edge case: last block will be smaller
+            if (pixel_count % PIXELS_PER_BLOCK)
+            {
+                block_count++;
+                int64_t remaining_pixels = pixel_count % PIXELS_PER_BLOCK;
+
+           
+                int64_t final_bits = remaining_pixels * 3;
+                final_bits += final_bits >> 1U; // allowance for the clear codes
+
+                final_block_size = (uint8_t)(final_bits / 8);
+                if (final_bits % 8)
+                    final_block_size++;
+            }
+
+            
+            while (block_count-- > 0)
+            {
+
+                uint8_t bytes_remaining_in_block = 0xFFU;
+
+                int64_t pixels_remaining_in_block = 678;
+     
+                if (block_count == 0)
+                {
+                    bytes_remaining_in_block = final_block_size;
+                    pixels_remaining_in_block = pixel_count;
+                }
+
+                b[u++] = bytes_remaining_in_block;
+
+//                printf("\nBlock size: %02x\n\t", bytes_remaining_in_block);
+
+                // we'll code using a uint16_t as a shift register
+                uint16_t sr = 0;
+                uint8_t bc= 0;
+
+                // clear code
+                sr |= (0b100 << bc); bc += 3;
+
+                int counter = 0;
+                int max_counter = 2;
+
+                while (bytes_remaining_in_block-- > 0)
+                {
+
+                    while (bc < 8)
+                    {
+
+                            sr |= (((pixel_count + flip) % 2 == 0 ? 0b000 : 0b001) << bc); bc += 3; 
+                            --pixels_remaining_in_block;
+                            --pixel_count;
+                            ++counter;
+
+
+                            if (counter >= max_counter)
+                            {
+                                // clear code
+                                sr |= (0b100 << bc); bc += 3;
+                                counter = 0;
+                            }
+                            if (pixels_remaining_in_block <= 0)
+                                break;
+                    }
+
+                
+
+                    // write lead out for the block
+                    if (pixels_remaining_in_block == 0)
+                    {
+                        sr |= (0b101 << bc); bc += 3;   // stop
+                    }
+
+
+                    // send the byte out
+                    uint8_t byte_out = sr & 0xFFU;
+//                    printf("%02X ", byte_out);
+                    b[u++] = byte_out;
+
+                    sr >>= 8U;
+                    bc -= 8;
+                }
+            
+            }
+
+            // block terminator
+            b[u++] = 0x0;
+
+            
+        }
     }
 
     // TRAILER
@@ -253,7 +260,7 @@ int main()
 
     }
 
-    printf("\n");
+//    printf("\n");
 
     int fd = open("./out.gif",  O_WRONLY | O_CREAT | O_TRUNC);
     write(fd, b, u); 
