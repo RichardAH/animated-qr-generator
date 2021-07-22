@@ -40,22 +40,11 @@ The Grammar.
 #define PIXELS_PER_BLOCK 450
 
 #define MAX_BUF (1024*1024)
-#define TEXT_MODE 1
-
+#define TEXT_MODE 0
+#define FONT_OFFSET 15
 uint64_t global_counter = 0;
 
 uint8_t number_font[][8] = {
-    {
-        0b00000000,
-        0b00000000,
-        0b00000000,
-        0b00000000,
-        0b00000000,
-        0b00000000,
-        0b00000000,
-        0b00000000
-    },
-
     {   // 0
         0b00000000,
         0b00111100,
@@ -448,7 +437,28 @@ int main(int argc, char** argv)
 
                             if (x == QRMODULECOUNT || y == 0)
                                 active = false;
-                            
+                           
+                            // frame counter
+                            {
+                                int digits[5] = {
+                                    (frame+1) / 10,
+                                    (frame+1) % 10,
+                                    10,
+                                    frame_count / 10,
+                                    frame_count % 10
+                                };
+
+                                
+                                for (int d = 0; d < 5; ++d)
+                                {
+                                    int startx = FONT_OFFSET + 8*d;
+                                    int starty = FONT_OFFSET;
+                                    if (y >= starty && y < starty + 8 && x >= startx && x < startx + 8)
+                                        active = (number_font[digits[d]][y-starty]&(1<<(8-(x-startx))));
+                                }
+
+                            }
+
                             //if (y == 0 && x < (frame+1.0)*QRMODULECOUNT/frame_count)
                             //    active = true;
 
