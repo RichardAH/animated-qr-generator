@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include "qrcodegen.h"
+#include <string.h>
 /*
 
 RH NOTE: Multibyte values are little endian
@@ -38,13 +39,192 @@ The Grammar.
 //gif options 
 #define PIXELS_PER_BLOCK 450
 
+#define MAX_BUF (1024*1024)
+#define TEXT_MODE 1
 
 uint64_t global_counter = 0;
 
-int main()
+uint8_t number_font[][8] = {
+    {
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000,
+        0b00000000
+    },
+
+    {   // 0
+        0b00000000,
+        0b00111100,
+        0b01000110,
+        0b01001010,
+        0b01010010,
+        0b01100010,
+        0b00111100,
+        0b00000000
+    },
+    {   // 1
+        0b00000000,
+        0b00011000,
+        0b00101000,
+        0b01001000,
+        0b00001000,
+        0b00001000,
+        0b01111110,
+        0b00000000
+    },
+    {   // 2
+        0b00000000,
+        0b00111100,
+        0b01000010,
+        0b00000010,
+        0b00111100,
+        0b01000000,
+        0b01111110,
+        0b00000000
+    },
+    {   // 3
+        0b00000000,
+        0b00111100,
+        0b01000010,
+        0b00001100,
+        0b00000010,
+        0b01000010,
+        0b00111100,
+        0b00000000
+    },
+    {   // 4
+        0b00000000,
+        0b00011100,
+        0b00100100,
+        0b01000100,
+        0b01000100,
+        0b01111110,
+        0b00000100,
+        0b00000000
+    },
+    {   // 5
+        0b00000000,
+        0b01111100,
+        0b01000000,
+        0b01111100,
+        0b00000010,
+        0b00000010,
+        0b01111100,
+        0b00000000
+    },
+    {   // 6
+        0b00000000,
+        0b00111100,
+        0b01000000,
+        0b01111100,
+        0b01000010,
+        0b01000010,
+        0b00111100,
+        0b00000000
+    },
+    {   // 7  RH UPTO
+        0b00000000,
+        0b01111110,
+        0b00000010,
+        0b00000100,
+        0b00001000,
+        0b00010000,
+        0b00100000,
+        0b00000000
+    },
+    {   // 8
+        0b00000000,
+        0b00111100,
+        0b01000010,
+        0b00111100,
+        0b01000010,
+        0b01000010,
+        0b00111100,
+        0b00000000
+    },
+    {   // 9
+        0b00000000,
+        0b00111110,
+        0b01000010,
+        0b01000010,
+        0b00111110,
+        0b00000010,
+        0b00000010,
+        0b00000000
+    },
+    {   // slash
+        0b00000000,
+        0b00000010,
+        0b00000100,
+        0b00001000,
+        0b00010000,
+        0b00100000,
+        0b01000000,
+        0b00000000
+    }
+};
+
+
+int main(int argc, char** argv)
 {
 
-    uint8_t* b = (uint8_t*)malloc(1024*1024);
+    uint8_t* input_data = (uint8_t*)malloc(MAX_BUF + 1);
+    size_t input_length = 0;
+    size_t frame_count = 0;
+    {
+        int read_fd = 0;
+        size_t read_size = 1;
+        if (argc == 2)
+        {
+            read_fd = open(argv[1], O_RDONLY);
+            if (read_fd == -1)
+                return fprintf(stderr, "Could not open file `%s`\n", argv[1]);
+
+            read_size = lseek(read_fd, 0L, SEEK_END);
+            lseek(read_fd, 0L, SEEK_SET);
+
+            if (read_size > MAX_BUF)
+                return fprintf(stderr, "File size too large\n");
+        }
+
+        size_t read_upto = 0;
+
+        while (read(read_fd, 0, 0) > -1)    // !EOF
+        {
+            if (read_upto + read_size > MAX_BUF)
+                read_size = MAX_BUF - read_upto;
+
+            if (read_size <= 0)
+                return fprintf(stderr, "Input too large\n");
+
+            size_t result = read(read_fd, input_data + read_upto, read_size);
+            if (result <= 0)
+                break;
+
+            read_upto += result;
+        }
+
+        close(read_fd);
+
+        input_data[read_upto] = '\0';
+        input_length = read_upto;
+
+        // compute frame number
+        frame_count = input_length / QRDATASIZE;
+        if (input_length % QRDATASIZE)
+            frame_count++;
+
+
+        printf("input length: %d\nframe count: %d\n", input_length, frame_count);
+    }
+
+
+
+    uint8_t* b = (uint8_t*)malloc(MAX_BUF);
     uint32_t u = 0;
 
     // HEADER
@@ -110,38 +290,48 @@ int main()
     }
 
     // FRAME
-    for (int flip = 0; flip < 36; ++flip)
+    for (int frame = 0; frame < frame_count; ++frame)
     {
         // GENERATE QR
-        uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
         uint8_t qrcode[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
 
-        //data[0] = flip;
-        //data[1] = 2;
-        for (int i = 0; i < QRDATASIZE; ++i)
-            data[i] = (uint8_t)(flip + 'a');
         
+        size_t start_of_frame = frame * QRDATASIZE;
+        size_t end_of_frame = (frame + 1) * QRDATASIZE;
+        if (end_of_frame > input_length)
+            end_of_frame = input_length;
 
-        data[QRDATASIZE] = '\0';
+        // for text mode only we will add and then remove \0 at end of frame
+        
+        if (TEXT_MODE)
+        {        
+            uint8_t c = input_data[end_of_frame];
+            input_data[end_of_frame] = '\0';
 
-        uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
-        //if (!qrcodegen_encodeBinary(data, QRDATASIZE, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
-        if (!qrcodegen_encodeText(data, tmp, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
-        {
-            fprintf(stderr, "failed to generate qr\n");
-            return 1;
-        } 
+            uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
+            //if (!qrcodegen_encodeBinary(data, QRDATASIZE, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
+            if (!qrcodegen_encodeText(input_data + start_of_frame, tmp, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
+            {
+                fprintf(stderr, "failed to generate qr\n");
+                return 1;
+            } 
 
-    /*
-    for (size_t j = 0; j < QRMODULECOUNT; ++j)
-    {
-        for (size_t i = 0; i < QRMODULECOUNT; ++i)
-        {
-            printf("%s", (qrcodegen_getModule(qrcode, j, i) ? "%" : " "));
+            input_data[end_of_frame] = c;
         }
-        printf("\n");
-    }
-*/
+        else
+        {
+            // the call to generate a qr binary is destructive of the input buffer so copy it first
+            // RH TODO: might be unnecessary
+            size_t len = end_of_frame - start_of_frame;
+            uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
+
+            memcpy(data, input_data + start_of_frame, len);
+            if (!qrcodegen_encodeBinary(data, len, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
+            {
+                fprintf(stderr, "failed to generate qr\n");
+                return 1;
+            }
+        }
 
         // GRAPHIC CONTROL EXTENSION
         {
@@ -257,9 +447,13 @@ int main()
                             bool active = qrcodegen_getModule(qrcode, x, y);
 
                             if (x == QRMODULECOUNT || y == 0)
-                                active = true;
-                                    
-                            sr |= (active ? 0b001 : 0b000) << bc; bc+= 3;
+                                active = false;
+                            
+                            //if (y == 0 && x < (frame+1.0)*QRMODULECOUNT/frame_count)
+                            //    active = true;
+
+
+                            sr |= (active ? 0b000 : 0b001) << bc; bc+= 3;
                                 
                                 //(/*x >= QRMODULECOUNT-1 || y >= QRMODULECOUNT-1 ||*/ qrcodegen_getModule(qrcode, x, y))
                                 //? 0b001 : 0b000 << bc; bc += 3;
