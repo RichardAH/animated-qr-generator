@@ -30,9 +30,18 @@ The Grammar.
 
 */
 
-#define QRVERSION (21U)
-#define QRMODULECOUNT (101U)
-#define QRDATASIZE (500U)
+//#define QRVERSION (16U)
+//#define QRMODULECOUNT (81U)
+//#define QRDATASIZE (300U)
+
+//#define QRVERSION (25U)
+//#define QRMODULECOUNT (117U)
+//#define QRDATASIZE (700U)
+
+#define QRVERSION (20U)
+#define QRMODULECOUNT (97U)
+#define QRDATASIZE (450U)
+
 #define QUIETZONE (0U)
 #define FRAMEDELAY (1U)
 
@@ -42,6 +51,7 @@ The Grammar.
 #define MAX_BUF (1024*1024)
 #define TEXT_MODE 1
 #define FONT_OFFSET 30
+#define SHOW_FRAME_COUNTER 0
 uint64_t global_counter = 0;
 
 uint8_t number_font[][8] = {
@@ -207,6 +217,7 @@ int main(int argc, char** argv)
         if (input_length % QRDATASIZE)
             frame_count++;
 
+//        frame_count = 1;
 
         printf("input length: %d\nframe count: %d\n", input_length, frame_count);
     }
@@ -447,6 +458,7 @@ int main(int argc, char** argv)
                             bool light = qrcodegen_getModule(qrcode, x, y);
 
                             // frame counter
+                            if (SHOW_FRAME_COUNTER)
                             {
                                 int digits[5] = {
                                     (frame+1) / 10,
@@ -468,7 +480,7 @@ int main(int argc, char** argv)
                             }
 
 
-                            sr |= (light ? 0b001 : 0b000) << bc; bc+= 3;
+                            sr |= (light ? 0b000 : 0b001) << bc; bc+= 3;
                                 
 
                             --pixels_remaining_in_block;
