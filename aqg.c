@@ -217,9 +217,8 @@ int main(int argc, char** argv)
         if (input_length % QRDATASIZE)
             frame_count++;
 
-//        frame_count = 1;
 
-        printf("input length: %d\nframe count: %d\n", input_length, frame_count);
+        fprintf(stderr, "input length: %d\nframe count: %d\n", input_length, frame_count);
     }
 
 
@@ -533,8 +532,8 @@ int main(int argc, char** argv)
 
 //    printf("\n");
 
-    int fd = open("./out.gif",  O_WRONLY | O_CREAT | O_TRUNC);
-    write(fd, b, u);
-    close(fd);
+    //int fd = open("./out.gif",  O_WRONLY | O_CREAT | O_TRUNC);
+    write(1, b, u);
+    //close(fd);
     free(b);
 }
