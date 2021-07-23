@@ -30,18 +30,18 @@ The Grammar.
 
 */
 
-#define QRVERSION (25U)
-#define QRMODULECOUNT (117U)
-#define QRDATASIZE (900U)
-#define QUIETZONE (5U)
-#define FRAMEDELAY (0U)
+#define QRVERSION (21U)
+#define QRMODULECOUNT (101U)
+#define QRDATASIZE (500U)
+#define QUIETZONE (0U)
+#define FRAMEDELAY (1U)
 
 //gif options 
 #define PIXELS_PER_BLOCK 450
 
 #define MAX_BUF (1024*1024)
-#define TEXT_MODE 0
-#define FONT_OFFSET 15
+#define TEXT_MODE 1
+#define FONT_OFFSET 30
 uint64_t global_counter = 0;
 
 uint8_t number_font[][8] = {
@@ -240,7 +240,7 @@ int main(int argc, char** argv)
                                 sort flag = 0,    size global colour table = 000 */
 
         // background colour index
-        b[u++] = 0x0;
+        b[u++] = 0x1;
 
         // pixel aspect ratio
         b[u++] = 0x1U;
@@ -297,9 +297,20 @@ int main(int argc, char** argv)
             uint8_t c = input_data[end_of_frame];
             input_data[end_of_frame] = '\0';
 
+            //printf("inp: `%s`\n", input_data + start_of_frame);
+
             uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
-            //if (!qrcodegen_encodeBinary(data, QRDATASIZE, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
-            if (!qrcodegen_encodeText(input_data + start_of_frame, tmp, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
+            uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
+            size_t len = end_of_frame - start_of_frame;
+            sprintf(data, "XPOP%02x%02x", frame+1, frame_count, data);
+            memcpy(data + 8, input_data + start_of_frame, len);
+            data[len + 8] = '\0';
+
+//bool qrcodegen_encodeText(const char *text, uint8_t tempBuffer[], uint8_t qrcode[],
+//  enum qrcodegen_Ecc ecl, int minVersion, int maxVersion, enum qrcodegen_Mask mask, bool boostEcl);
+
+            //if (!qrcodegen_encodeText(input_data + start_of_frame, tmp, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
+            if (!qrcodegen_encodeText(data, tmp, qrcode, qrcodegen_Ecc_QUARTILE, QRVERSION, QRVERSION, -1, 1))
             {
                 fprintf(stderr, "failed to generate qr\n");
                 return 1;
@@ -355,13 +366,13 @@ int main(int argc, char** argv)
             b[u++] = QUIETZONE % 0xFFU;   b[u++] = QUIETZONE >> 8U;
 
             // width
-            b[u++] = (QRMODULECOUNT) & 0xFFU; b[u++] = (QRMODULECOUNT) >> 8U;
+            b[u++] = (QRMODULECOUNT-0) & 0xFFU; b[u++] = (QRMODULECOUNT-0) >> 8U;
 
             // height
-            b[u++] = (QRMODULECOUNT) & 0xFFU; b[u++] = (QRMODULECOUNT) >> 8U;
+            b[u++] = (QRMODULECOUNT-0) & 0xFFU; b[u++] = (QRMODULECOUNT-0) >> 8U;
 
             // packed fields
-            b[u++] = 0x0;   // no flags active
+            b[u++] = 0x0;   // no flags light
 
 
         }
@@ -373,7 +384,7 @@ int main(int argc, char** argv)
             // LZW Minimum code size
             b[u++] = 2U; // minimum code size = 2 even for monochrome
 
-            int64_t pixel_count = QRMODULECOUNT * QRMODULECOUNT;
+            int64_t pixel_count = (QRMODULECOUNT-0) * (QRMODULECOUNT-0);
 
 
 
@@ -430,14 +441,11 @@ int main(int argc, char** argv)
                     while (bc < 8)
                     {
 
-                            size_t y = QRMODULECOUNT -1 - ((pixel_count) / QRMODULECOUNT);
-                            size_t x = QRMODULECOUNT - ((pixel_count) % QRMODULECOUNT);
+                            size_t y = QRMODULECOUNT - ((pixel_count-1) / (QRMODULECOUNT-0)) - 1;
+                            size_t x = QRMODULECOUNT - ((pixel_count-1) % (QRMODULECOUNT-0)) - 1;
 
-                            bool active = qrcodegen_getModule(qrcode, x, y);
+                            bool light = qrcodegen_getModule(qrcode, x, y);
 
-                            if (x == QRMODULECOUNT || y == 0)
-                                active = false;
-                           
                             // frame counter
                             {
                                 int digits[5] = {
@@ -452,22 +460,16 @@ int main(int argc, char** argv)
                                 for (int d = 0; d < 5; ++d)
                                 {
                                     int startx = FONT_OFFSET + 8*d;
-                                    int starty = FONT_OFFSET;
-                                    if (y >= starty && y < starty + 8 && x >= startx && x < startx + 8)
-                                        active = (number_font[digits[d]][y-starty]&(1<<(8-(x-startx))));
+                                    int starty = FONT_OFFSET + 17;
+                                    if (y >= starty && y < starty + 8 && x > startx && x <= startx + 8)
+                                        light = !(number_font[digits[d]][y-starty]&(1<<(8-(x-startx))));
                                 }
 
                             }
 
-                            //if (y == 0 && x < (frame+1.0)*QRMODULECOUNT/frame_count)
-                            //    active = true;
 
-
-                            sr |= (active ? 0b000 : 0b001) << bc; bc+= 3;
+                            sr |= (light ? 0b001 : 0b000) << bc; bc+= 3;
                                 
-                                //(/*x >= QRMODULECOUNT-1 || y >= QRMODULECOUNT-1 ||*/ qrcodegen_getModule(qrcode, x, y))
-                                //? 0b001 : 0b000 << bc; bc += 3;
-
 
                             --pixels_remaining_in_block;
                             --pixel_count;
