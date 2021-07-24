@@ -38,7 +38,7 @@ The Grammar.
 //#define QRMODULECOUNT (117U)
 //#define QRDATASIZE (700U)
 
-#define DEBUG 0
+#define DEBUG 1
 
 #define QRVERSION (20U)
 #define QRMODULECOUNT (97U)
@@ -323,7 +323,7 @@ int main(int argc, char** argv)
             uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
             uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
             size_t len = end_of_frame - start_of_frame;
-            sprintf(data, "XPOP%02x%02x", frame+1, frame_count, data);
+            sprintf(data, "XPOP%02x%02x", frame+1, frame_count);
             memcpy(data + 8, input_data + start_of_frame, len);
             data[len + 8] = '\0';
 
@@ -344,9 +344,9 @@ int main(int argc, char** argv)
             size_t len = end_of_frame - start_of_frame;
             uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
 
-            sprintf(data, "XPOP%02x%02x", frame+1, frame_count, data);
+            sprintf(data, "XPOP%02x%02x", frame+1, frame_count);
             memcpy(data + 8, input_data + start_of_frame, len);
-            if (!qrcodegen_encodeBinary(data, len, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
+            if (!qrcodegen_encodeBinary(data, len + 8, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
             {
                 fprintf(stderr, "failed to generate qr\n");
                 return 1;
