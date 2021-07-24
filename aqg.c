@@ -38,6 +38,8 @@ The Grammar.
 //#define QRMODULECOUNT (117U)
 //#define QRDATASIZE (700U)
 
+#define DEBUG 0
+
 #define QRVERSION (20U)
 #define QRMODULECOUNT (97U)
 #define QRDATASIZE (450U)
@@ -213,6 +215,13 @@ int main(int argc, char** argv)
 
         input_data[read_upto] = '\0';
         input_length = read_upto;
+
+        if (DEBUG)
+        {
+            int tmpfd = open("debug.b", O_CREAT | O_TRUNC | O_WRONLY);
+            write(tmpfd, input_data, input_length);
+            close(tmpfd);
+        }
 
         // compute frame number
         frame_count = input_length / QRDATASIZE;
