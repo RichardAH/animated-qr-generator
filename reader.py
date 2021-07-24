@@ -5,6 +5,8 @@ from signal import signal, SIGINT
 from threading import Thread, Lock
 from pyzbar.pyzbar import decode
 import json
+import brotli
+import base64
 
 mutex = Lock()
 mutex2 = Lock()
@@ -85,7 +87,10 @@ def video_decoder(thread_id):
                     full_data = b''
                     for i in range(frame_count):
                         full_data += frame_data[i]
-                    print(full_data.decode('utf-8'))
+                    try:
+                        print(brotli.decompress(base64.a85decode(full_data)).decode('utf-8'))
+                    except:
+                        print(full_data.decode('utf-8'))
                     dying = True
             finally:
                 mutex2.release()
