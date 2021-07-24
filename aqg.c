@@ -49,7 +49,7 @@ The Grammar.
 #define PIXELS_PER_BLOCK 450
 
 #define MAX_BUF (1024*1024)
-#define TEXT_MODE 1
+//#define TEXT_MODE 1
 #define FONT_OFFSET 30
 #define SHOW_FRAME_COUNTER 0
 uint64_t global_counter = 0;
@@ -171,13 +171,15 @@ uint8_t number_font[][8] = {
 int main(int argc, char** argv)
 {
 
+    bool binary_mode = (argc == 3 && argv[2][0] == 'b');
+
     uint8_t* input_data = (uint8_t*)malloc(MAX_BUF + 1);
     size_t input_length = 0;
     size_t frame_count = 0;
     {
         int read_fd = 0;
         size_t read_size = 1;
-        if (argc == 2)
+        if (argc == 2 && argv[1][0] != '-')
         {
             read_fd = open(argv[1], O_RDONLY);
             if (read_fd == -1)
@@ -302,7 +304,7 @@ int main(int argc, char** argv)
 
         // for text mode only we will add and then remove \0 at end of frame
         
-        if (TEXT_MODE)
+        if (!binary_mode)
         {        
             uint8_t c = input_data[end_of_frame];
             input_data[end_of_frame] = '\0';
@@ -330,12 +332,11 @@ int main(int argc, char** argv)
         }
         else
         {
-            // the call to generate a qr binary is destructive of the input buffer so copy it first
-            // RH TODO: might be unnecessary
             size_t len = end_of_frame - start_of_frame;
             uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
 
-            memcpy(data, input_data + start_of_frame, len);
+            sprintf(data, "XPOP%02x%02x", frame+1, frame_count, data);
+            memcpy(data + 8, input_data + start_of_frame, len);
             if (!qrcodegen_encodeBinary(data, len, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
             {
                 fprintf(stderr, "failed to generate qr\n");
@@ -532,7 +533,6 @@ int main(int argc, char** argv)
 
 //    printf("\n");
 
-    //int fd = open("./out.gif",  O_WRONLY | O_CREAT | O_TRUNC);
     write(1, b, u);
     //close(fd);
     free(b);
