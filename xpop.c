@@ -5,195 +5,53 @@
 #include <unistd.h>
 #include "qrcodegen.h"
 #include <string.h>
-/*
 
-RH NOTE: Multibyte values are little endian
+#include <brotli/encode.h>
+#include "ascii85.h"
 
-The Grammar.
-
-<GIF Data Stream> ::=     Header <Logical Screen> <Data>* Trailer
-
-<Logical Screen> ::=      Logical Screen Descriptor [Global Color Table]
-
-<Data> ::=                <Graphic Block>  |
-                          <Special-Purpose Block>
-
-<Graphic Block> ::=       [Graphic Control Extension] <Graphic-Rendering Block>
-
-<Graphic-Rendering Block> ::=  <Table-Based Image>  |
-                               Plain Text Extension
-
-<Table-Based Image> ::=   Image Descriptor [Local Color Table] Image Data
-
-<Special-Purpose Block> ::=    Application Extension  |
-                               Comment Extension
-
-*/
-
-//#define QRVERSION (16U)
-//#define QRMODULECOUNT (81U)
-//#define QRDATASIZE (300U)
-
-//#define QRVERSION (25U)
-//#define QRMODULECOUNT (117U)
-//#define QRDATASIZE (700U)
+#include "numberfont.h"
 
 #define DEBUG 1
+
+#define DATA_FRAME_MAGIC     "XPOP"
+#define PARITY_FRAME_MAGIC   "XPAR"
+#define DATA_FRAMES_PER_PARITY_FRAME 5
 
 #define QRVERSION (20U)
 #define QRMODULECOUNT (97U)
 #define QRDATASIZE (450U)
 
 #define QUIETZONE (0U)
-#define FRAMEDELAY (1U)
+#define FRAMEDELAY (5U)
 
 //gif options 
 #define PIXELS_PER_BLOCK 450
 
-#define MAX_BUF (1024*1024)
+#define MAX_BUF (3*1024*1024)
 //#define TEXT_MODE 1
 #define FONT_OFFSET 30
-#define SHOW_FRAME_COUNTER 0
+#define SHOW_FRAME_COUNTER 1
 uint64_t global_counter = 0;
-
-uint8_t number_font[][8] = {
-    {   // 0
-        0b00000000,
-        0b00111100,
-        0b01000110,
-        0b01001010,
-        0b01010010,
-        0b01100010,
-        0b00111100,
-        0b00000000
-    },
-    {   // 1
-        0b00000000,
-        0b00011000,
-        0b00101000,
-        0b01001000,
-        0b00001000,
-        0b00001000,
-        0b01111110,
-        0b00000000
-    },
-    {   // 2
-        0b00000000,
-        0b00111100,
-        0b01000010,
-        0b00000010,
-        0b00111100,
-        0b01000000,
-        0b01111110,
-        0b00000000
-    },
-    {   // 3
-        0b00000000,
-        0b00111100,
-        0b01000010,
-        0b00001100,
-        0b00000010,
-        0b01000010,
-        0b00111100,
-        0b00000000
-    },
-    {   // 4
-        0b00000000,
-        0b00011100,
-        0b00100100,
-        0b01000100,
-        0b01000100,
-        0b01111110,
-        0b00000100,
-        0b00000000
-    },
-    {   // 5
-        0b00000000,
-        0b01111100,
-        0b01000000,
-        0b01111100,
-        0b00000010,
-        0b00000010,
-        0b01111100,
-        0b00000000
-    },
-    {   // 6
-        0b00000000,
-        0b00111100,
-        0b01000000,
-        0b01111100,
-        0b01000010,
-        0b01000010,
-        0b00111100,
-        0b00000000
-    },
-    {   // 7  RH UPTO
-        0b00000000,
-        0b01111110,
-        0b00000010,
-        0b00000100,
-        0b00001000,
-        0b00010000,
-        0b00100000,
-        0b00000000
-    },
-    {   // 8
-        0b00000000,
-        0b00111100,
-        0b01000010,
-        0b00111100,
-        0b01000010,
-        0b01000010,
-        0b00111100,
-        0b00000000
-    },
-    {   // 9
-        0b00000000,
-        0b00111110,
-        0b01000010,
-        0b01000010,
-        0b00111110,
-        0b00000010,
-        0b00000010,
-        0b00000000
-    },
-    {   // slash
-        0b00000000,
-        0b00000010,
-        0b00000100,
-        0b00001000,
-        0b00010000,
-        0b00100000,
-        0b01000000,
-        0b00000000
-    }
-};
 
 
 int main(int argc, char** argv)
 {
 
-    bool binary_mode = (argc == 3 && argv[2][0] == 'b');
 
-    uint8_t* input_data = (uint8_t*)malloc(MAX_BUF + 1);
+    uint8_t* input_data = (uint8_t*)malloc(MAX_BUF);
     size_t input_length = 0;
+    
+    uint8_t* compressed_data = (uint8_t*)malloc(MAX_BUF);
+    size_t compressed_length = MAX_BUF;
+
     size_t frame_count = 0;
+    size_t last_parity_frame = 0;
+
     {
         int read_fd = 0;
+        
         size_t read_size = 1;
-        if (argc == 2 && argv[1][0] != '-')
-        {
-            read_fd = open(argv[1], O_RDONLY);
-            if (read_fd == -1)
-                return fprintf(stderr, "Could not open file `%s`\n", argv[1]);
-
-            read_size = lseek(read_fd, 0L, SEEK_END);
-            lseek(read_fd, 0L, SEEK_SET);
-
-            if (read_size > MAX_BUF)
-                return fprintf(stderr, "File size too large\n");
-        }
-
+        
         size_t read_upto = 0;
 
         while (read(read_fd, 0, 0) > -1)    // !EOF
@@ -211,17 +69,40 @@ int main(int argc, char** argv)
             read_upto += result;
         }
 
-        close(read_fd);
-
-        input_data[read_upto] = '\0';
         input_length = read_upto;
 
         if (DEBUG)
-        {
-            int tmpfd = open("debug.b", O_CREAT | O_TRUNC | O_WRONLY);
-            write(tmpfd, input_data, input_length);
-            close(tmpfd);
-        }
+            fprintf(stderr, "raw input len: %d\n", input_length);
+        
+        if (BrotliEncoderCompress(BROTLI_DEFAULT_QUALITY, BROTLI_DEFAULT_WINDOW, BROTLI_MODE_TEXT,
+            input_length, input_data, &compressed_length, compressed_data) != BROTLI_TRUE)
+            return fprintf(stderr, "Failed to compress input\n");
+
+        if (DEBUG)
+            fprintf(stderr, "compressed len: %d\n", compressed_length);
+
+        size_t max_ascii85_length = ascii85_get_max_encoded_length(compressed_length);
+
+        if (DEBUG)    
+            fprintf(stderr, "max ascii85 size: %d\n", max_ascii85_length);
+
+        if (max_ascii85_length > MAX_BUF)
+            return fprintf(stderr, "Input too large: ascii85 would not fit in buffer\n");
+
+        
+        int32_t ascii85_length = encode_ascii85(compressed_data, compressed_length, input_data, MAX_BUF);
+
+        if (DEBUG)
+            fprintf(stderr, "asci85 len: %d\n", ascii85_length);
+
+        if (ascii85_length <= 0 || ascii85_length > MAX_BUF)
+            return fprintf(stderr, "Failed to ascii85 encode compressed input\n");
+
+        input_length = (size_t)(ascii85_length);
+
+
+        if (DEBUG)
+            fprintf(stderr, "ascii85: `%.*s`\n", ascii85_length, input_data);
 
         // compute frame number
         frame_count = input_length / QRDATASIZE;
@@ -299,38 +180,91 @@ int main(int argc, char** argv)
         b[u++] = 0x0;
     }
 
+
+    uint8_t parity_data[QRDATASIZE + 9];
+    // prepare parity frame header, which never changes
+    for (int i = 0; i < 4; ++i)
+        parity_data[i] = PARITY_FRAME_MAGIC[i];
+
+    // zero parity frame ready to receive bytes
+    for (int i = 8; i < sizeof(parity_data); ++i)
+        parity_data[i] = 0;
+
+
     // FRAME
-    for (int frame = 0; frame < frame_count; ++frame)
+    for (int frame = 0; frame <= frame_count; ++frame)
     {
-        // GENERATE QR
+
+        int is_parity_frame = frame > 0 && frame % DATA_FRAMES_PER_PARITY_FRAME == 0 && last_parity_frame < frame ||
+                frame == frame_count;
+
         uint8_t qrcode[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
+        if (is_parity_frame)
+        {
 
-        
-        size_t start_of_frame = frame * QRDATASIZE;
-        size_t end_of_frame = (frame + 1) * QRDATASIZE;
-        if (end_of_frame > input_length)
-            end_of_frame = input_length;
+            fprintf(stderr, "Generating parity frame at frame %d\n", frame);
 
-        // for text mode only we will add and then remove \0 at end of frame
+            // GENERATE PARITY FRAME
+            uint8_t hdr[5];
+
+            // first finish header
+            sprintf(hdr, "%02X%02X", 0, frame-1);
+            for (int i = 4; i < 8; ++i)
+                parity_data[i] = hdr[i-4];
         
-        if (!binary_mode)
-        {        
+            // next normalize ascii values (by adding ascii85 base char)
+            for (int i = 8; i < sizeof(parity_data) - 1; ++i)
+                parity_data[i] += '!';
+                      
+            // place a null mark at the end of the frame
+            parity_data[QRDATASIZE + 8] = '\0'; // (note: should already be there due to memclear)
+
+
+            fprintf(stderr, "Partiy data: `%s`\n", parity_data);
+
+            // now generate the qr
+            uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
+            if (!qrcodegen_encodeText(parity_data, tmp, qrcode, qrcodegen_Ecc_QUARTILE, QRVERSION, QRVERSION, -1, 1))
+            {
+                fprintf(stderr, "failed to generate qr\n");
+                return 1;
+            } 
+
+            // denormalize parity frame
+            for (int i = 8; i < sizeof(parity_data) - 1; ++i)
+                parity_data[i] -= '!';
+
+
+            last_parity_frame = frame;
+
+            // ensure the regular frame in this spot is written unless we're at the end
+            if (frame != frame_count)
+                frame--;
+        }
+        else
+        {
+            // GENERATE NORMAL FRAME
+            
+            size_t start_of_frame = frame * QRDATASIZE;
+            size_t end_of_frame = (frame + 1) * QRDATASIZE;
+            if (end_of_frame > input_length)
+                end_of_frame = input_length;
+
+            // XOR this frame toward next parity frame
+            for (int i = start_of_frame, j = 8; i < end_of_frame; ++i, ++j)
+                parity_data[j] = (parity_data[j] + (input_data[i]- 33U)) % 85U;
+
+            // for text mode only we will add and then remove \0 at end of frame
             uint8_t c = input_data[end_of_frame];
             input_data[end_of_frame] = '\0';
-
-            //printf("inp: `%s`\n", input_data + start_of_frame);
 
             uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
             uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
             size_t len = end_of_frame - start_of_frame;
-            sprintf(data, "XPOP%02x%02x", frame+1, frame_count);
+            sprintf(data, DATA_FRAME_MAGIC "%02x%02x", frame+1, frame_count);
             memcpy(data + 8, input_data + start_of_frame, len);
             data[len + 8] = '\0';
 
-//bool qrcodegen_encodeText(const char *text, uint8_t tempBuffer[], uint8_t qrcode[],
-//  enum qrcodegen_Ecc ecl, int minVersion, int maxVersion, enum qrcodegen_Mask mask, bool boostEcl);
-
-            //if (!qrcodegen_encodeText(input_data + start_of_frame, tmp, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
             if (!qrcodegen_encodeText(data, tmp, qrcode, qrcodegen_Ecc_QUARTILE, QRVERSION, QRVERSION, -1, 1))
             {
                 fprintf(stderr, "failed to generate qr\n");
@@ -338,19 +272,6 @@ int main(int argc, char** argv)
             } 
 
             input_data[end_of_frame] = c;
-        }
-        else
-        {
-            size_t len = end_of_frame - start_of_frame;
-            uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
-
-            sprintf(data, "XPOP%02x%02x", frame+1, frame_count);
-            memcpy(data + 8, input_data + start_of_frame, len);
-            if (!qrcodegen_encodeBinary(data, len + 8, qrcode, 0, QRVERSION, QRVERSION, -1, 1))
-            {
-                fprintf(stderr, "failed to generate qr\n");
-                return 1;
-            }
         }
 
         // GRAPHIC CONTROL EXTENSION
@@ -473,8 +394,8 @@ int main(int argc, char** argv)
                                     (frame+1) / 10,
                                     (frame+1) % 10,
                                     10,
-                                    frame_count / 10,
-                                    frame_count % 10
+                                    (is_parity_frame ? 10 : frame_count / 10),
+                                    (is_parity_frame ? 10 : frame_count % 10)
                                 };
 
                                 
