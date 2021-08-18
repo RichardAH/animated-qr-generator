@@ -1,2 +1,2 @@
 all:
-	gcc aqg.c qrcodegen.c -o aqg
+	gcc xpop.c qrcodegen.c -o xpop
