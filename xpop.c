@@ -208,7 +208,7 @@ int main(int argc, char** argv)
             uint8_t hdr[5];
 
             // first finish header
-            sprintf(hdr, "%02X%02X", 0, frame-1);
+            sprintf(hdr, "%02X%02X", 1, frame);
             for (int i = 4; i < 8; ++i)
                 parity_data[i] = hdr[i-4];
         
