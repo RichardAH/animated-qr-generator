@@ -181,46 +181,54 @@ int main(int argc, char** argv)
     }
 
 
-    uint8_t parity_data[QRDATASIZE + 9];
+    uint8_t parity_data[QRDATASIZE + 13];
     // prepare parity frame header, which never changes
     for (int i = 0; i < 4; ++i)
         parity_data[i] = PARITY_FRAME_MAGIC[i];
 
     // zero parity frame ready to receive bytes
-    for (int i = 8; i < sizeof(parity_data); ++i)
+    for (int i = 12; i < sizeof(parity_data); ++i)
         parity_data[i] = 0;
 
+
+    size_t last_frame_size = 0; // this is used by parity frames, in particular the final frame
 
     // FRAME
     for (int frame = 0; frame <= frame_count; ++frame)
     {
 
-        int is_parity_frame = frame > 0 && frame % DATA_FRAMES_PER_PARITY_FRAME == 0 && last_parity_frame < frame ||
+        int is_parity_frame = frame > 0 && 
+            frame % DATA_FRAMES_PER_PARITY_FRAME == 0 && last_parity_frame < frame ||
                 frame == frame_count;
 
         uint8_t qrcode[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
         if (is_parity_frame)
         {
 
-            fprintf(stderr, "Generating parity frame at frame %d\n", frame);
+//            fprintf(stderr, "Generating parity frame at frame %d\n", frame);
 
             // GENERATE PARITY FRAME
-            uint8_t hdr[5];
+            uint8_t hdr[9];
 
             // first finish header
-            sprintf(hdr, "%02X%02X", 1, frame);
-            for (int i = 4; i < 8; ++i)
+            sprintf(hdr, "%02X%02X%04X", 1, frame, last_frame_size);
+            for (int i = 4; i < 12; ++i)
                 parity_data[i] = hdr[i-4];
         
             // next normalize ascii values (by adding ascii85 base char)
-            for (int i = 8; i < sizeof(parity_data) - 1; ++i)
-                parity_data[i] += '!';
+            for (int i = 12; i < sizeof(parity_data) - 1; ++i)
+                parity_data[i] += 33U;
                       
             // place a null mark at the end of the frame
-            parity_data[QRDATASIZE + 8] = '\0'; // (note: should already be there due to memclear)
+            parity_data[QRDATASIZE + 12] = '\0'; // (note: should already be there due to memclear)
 
 
-            fprintf(stderr, "Partiy data: `%s`\n", parity_data);
+            //fprintf(stderr, "Partiy data: `%.*s`\n", QRDATASIZE + 12, parity_data);
+            fprintf(stderr, "parse_parity(Buffer.from('");
+            for (int i = 0; i < QRDATASIZE + 12; ++i)
+                fprintf(stderr, "%02X", parity_data[i]);
+            fprintf(stderr, "', 'hex').toString('utf-8'));\n");
+
 
             // now generate the qr
             uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
@@ -231,9 +239,8 @@ int main(int argc, char** argv)
             } 
 
             // denormalize parity frame
-            for (int i = 8; i < sizeof(parity_data) - 1; ++i)
-                parity_data[i] -= '!';
-
+            for (int i = 12; i < sizeof(parity_data) - 1; ++i)
+                parity_data[i] -= 33U;
 
             last_parity_frame = frame;
 
@@ -250,20 +257,29 @@ int main(int argc, char** argv)
             if (end_of_frame > input_length)
                 end_of_frame = input_length;
 
+            // record this for the next parity frame header
+            last_frame_size = end_of_frame - start_of_frame;
+
             // XOR this frame toward next parity frame
-            for (int i = start_of_frame, j = 8; i < end_of_frame; ++i, ++j)
-                parity_data[j] = (parity_data[j] + (input_data[i]- 33U)) % 85U;
+            for (int i = start_of_frame, j = 12; i < end_of_frame; ++i, ++j)
+                parity_data[j] = (uint8_t)((((uint64_t)parity_data[j]) + (uint64_t)(input_data[i]) - 33U) 
+                        % 85U);
 
             // for text mode only we will add and then remove \0 at end of frame
             uint8_t c = input_data[end_of_frame];
             input_data[end_of_frame] = '\0';
-
+//            fprintf(stderr, "frame %d:`%.*s`\n", frame, last_frame_size, input_data + start_of_frame);
             uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
             uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
             size_t len = end_of_frame - start_of_frame;
-            sprintf(data, DATA_FRAME_MAGIC "%02x%02x", frame+1, frame_count);
-            memcpy(data + 8, input_data + start_of_frame, len);
-            data[len + 8] = '\0';
+            sprintf(data, DATA_FRAME_MAGIC "%02X%02X%04X", frame+1, frame_count, last_frame_size);
+            memcpy(data + 12, input_data + start_of_frame, len);
+            data[len + 12] = '\0';
+
+            fprintf(stderr, "parse_frame(Buffer.from('");
+            for (int i = 0; i < len + 12; ++i)
+                fprintf(stderr, "%02X", data[i]);
+            fprintf(stderr, "', 'hex').toString('utf-8'));\n");
 
             if (!qrcodegen_encodeText(data, tmp, qrcode, qrcodegen_Ecc_QUARTILE, QRVERSION, QRVERSION, -1, 1))
             {
