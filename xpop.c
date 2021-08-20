@@ -11,7 +11,7 @@
 
 #include "numberfont.h"
 
-#define DEBUG 1
+#define DEBUG 0
 
 #define DATA_FRAME_MAGIC     "XPOP"
 #define PARITY_FRAME_MAGIC   "XPAR"
@@ -110,7 +110,8 @@ int main(int argc, char** argv)
             frame_count++;
 
 
-        fprintf(stderr, "input length: %d\nframe count: %d\n", input_length, frame_count);
+        if (DEBUG)
+            fprintf(stderr, "input length: %d\nframe count: %d\n", input_length, frame_count);
     }
 
 
@@ -223,12 +224,13 @@ int main(int argc, char** argv)
             parity_data[QRDATASIZE + 12] = '\0'; // (note: should already be there due to memclear)
 
 
-            //fprintf(stderr, "Partiy data: `%.*s`\n", QRDATASIZE + 12, parity_data);
-            fprintf(stderr, "parse_parity(Buffer.from('");
-            for (int i = 0; i < QRDATASIZE + 12; ++i)
-                fprintf(stderr, "%02X", parity_data[i]);
-            fprintf(stderr, "', 'hex').toString('utf-8'));\n");
-
+            if (DEBUG)
+            {
+                fprintf(stderr, "parse_parity(Buffer.from('");
+                for (int i = 0; i < QRDATASIZE + 12; ++i)
+                    fprintf(stderr, "%02X", parity_data[i]);
+                fprintf(stderr, "', 'hex').toString('utf-8'));\n");
+            }
 
             // now generate the qr
             uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
@@ -268,7 +270,6 @@ int main(int argc, char** argv)
             // for text mode only we will add and then remove \0 at end of frame
             uint8_t c = input_data[end_of_frame];
             input_data[end_of_frame] = '\0';
-//            fprintf(stderr, "frame %d:`%.*s`\n", frame, last_frame_size, input_data + start_of_frame);
             uint8_t tmp[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
             uint8_t data[qrcodegen_BUFFER_LEN_FOR_VERSION(QRVERSION)];
             size_t len = end_of_frame - start_of_frame;
@@ -276,10 +277,13 @@ int main(int argc, char** argv)
             memcpy(data + 12, input_data + start_of_frame, len);
             data[len + 12] = '\0';
 
-            fprintf(stderr, "parse_frame(Buffer.from('");
-            for (int i = 0; i < len + 12; ++i)
-                fprintf(stderr, "%02X", data[i]);
-            fprintf(stderr, "', 'hex').toString('utf-8'));\n");
+            if (DEBUG)
+            {
+                fprintf(stderr, "parse_frame(Buffer.from('");
+                for (int i = 0; i < len + 12; ++i)
+                    fprintf(stderr, "%02X", data[i]);
+                fprintf(stderr, "', 'hex').toString('utf-8'));\n");
+            }
 
             if (!qrcodegen_encodeText(data, tmp, qrcode, qrcodegen_Ecc_QUARTILE, QRVERSION, QRVERSION, -1, 1))
             {
