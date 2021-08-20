@@ -15,14 +15,14 @@
 
 #define DATA_FRAME_MAGIC     "XPOP"
 #define PARITY_FRAME_MAGIC   "XPAR"
-#define DATA_FRAMES_PER_PARITY_FRAME 5
+#define DATA_FRAMES_PER_PARITY_FRAME 4
 
 #define QRVERSION (20U)
 #define QRMODULECOUNT (97U)
 #define QRDATASIZE (450U)
 
 #define QUIETZONE (0U)
-#define FRAMEDELAY (5U)
+#define FRAMEDELAY (4U)
 
 //gif options 
 #define PIXELS_PER_BLOCK 450
